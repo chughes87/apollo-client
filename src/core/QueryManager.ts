@@ -68,6 +68,10 @@ import {
   toQueryResult,
 } from "@apollo/client/utilities/internal";
 import {
+  isQuerySubset,
+  projectResult,
+} from "@apollo/client/utilities";
+import {
   invariant,
   newInvariantError,
 } from "@apollo/client/utilities/invariant";
@@ -880,6 +884,9 @@ export class QueryManager {
     restart?: () => void;
   }>(false);
 
+  // Maps printed query strings to their DocumentNode for subset deduplication lookups
+  private inFlightQueryDocIndex = new Map<string, DocumentNode>();
+
   private getObservableFromLink<TData = unknown>(
     query: DocumentNode,
     context: DefaultContext | undefined,
@@ -957,23 +964,76 @@ export class QueryManager {
           entry = inFlightLinkObservables.lookup(printedServerQuery, varJson);
 
           if (!entry.observable) {
-            entry.observable = execute(link, operation, executeContext).pipe(
-              withRestart,
-              finalize(() => {
-                if (
-                  inFlightLinkObservables.peek(printedServerQuery, varJson) ===
-                  entry
-                ) {
-                  inFlightLinkObservables.remove(printedServerQuery, varJson);
-                }
-              }),
-              // We don't want to replay the last emitted value for
-              // subscriptions and instead opt to wait to receive updates until
-              // the subscription emits new values.
-              operationType === OperationTypeNode.SUBSCRIPTION ?
-                share()
-              : shareReplay({ refCount: true })
-            ) as Observable<ApolloLink.Result<TData>>;
+            // No exact match — check for a superset query already in flight
+            const inFlightIndex = this.inFlightQueryDocIndex;
+            let supersetQuery: DocumentNode | undefined;
+            let supersetEntry: typeof entry | undefined;
+
+            for (const [
+              printedQuery,
+              queryDoc,
+            ] of inFlightIndex.entries()) {
+              if (printedQuery === printedServerQuery) continue;
+              const candidate = inFlightLinkObservables.peek(
+                printedQuery,
+                varJson
+              );
+              if (
+                candidate?.observable &&
+                isQuerySubset(queryDoc, serverQuery)
+              ) {
+                supersetQuery = queryDoc;
+                supersetEntry = candidate;
+                break;
+              }
+            }
+
+            if (supersetEntry && supersetQuery) {
+              // Project the superset result down to this query's fields
+              const superQ = supersetQuery;
+              entry.observable = supersetEntry.observable.pipe(
+                map((result) => {
+                  if (result.data) {
+                    return {
+                      ...result,
+                      data: projectResult(
+                        result.data as Record<string, any>,
+                        superQ,
+                        serverQuery
+                      ),
+                    } as ApolloLink.Result<TData>;
+                  }
+                  return result as ApolloLink.Result<TData>;
+                })
+              );
+            } else {
+              // No in-flight match — create a new request
+              inFlightIndex.set(printedServerQuery, serverQuery);
+
+              entry.observable = execute(link, operation, executeContext).pipe(
+                withRestart,
+                finalize(() => {
+                  if (
+                    inFlightLinkObservables.peek(
+                      printedServerQuery,
+                      varJson
+                    ) === entry
+                  ) {
+                    inFlightLinkObservables.remove(
+                      printedServerQuery,
+                      varJson
+                    );
+                  }
+                  inFlightIndex.delete(printedServerQuery);
+                }),
+                // We don't want to replay the last emitted value for
+                // subscriptions and instead opt to wait to receive updates until
+                // the subscription emits new values.
+                operationType === OperationTypeNode.SUBSCRIPTION ?
+                  share()
+                : shareReplay({ refCount: true })
+              ) as Observable<ApolloLink.Result<TData>>;
+            }
           }
         } else {
           entry.observable = execute(link, operation, executeContext).pipe(

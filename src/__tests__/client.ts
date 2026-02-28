@@ -1744,6 +1744,172 @@ describe("client", () => {
     expect(unsubscribeCount).toBe(1);
   });
 
+  it("deduplicates queries that are strict subsets", async () => {
+    const queryDoc = gql`
+      query {
+        author {
+          name
+          language
+        }
+      }
+    `;
+    const queryDoc2 = gql`
+      query {
+        author {
+          name
+        }
+      }
+    `;
+    const data = {
+      author: {
+        name: "Jonas",
+        language: "en",
+      },
+    };
+    const data2 = {
+      author: {
+        name: "Dhaivat",
+        language: "hi",
+      },
+    };
+
+    // We have two responses for different queries, but the second query
+    // is a subset of the first. Only the first should hit the network.
+    const link = new MockLink([
+      {
+        request: { query: queryDoc },
+        result: { data },
+        delay: 10,
+      },
+      {
+        request: { query: queryDoc2 },
+        result: { data: data2 },
+      },
+    ]);
+    const client = new ApolloClient({
+      link,
+      cache: new InMemoryCache({ addTypename: false }),
+    });
+
+    const q1 = client.query({ query: queryDoc });
+    const q2 = client.query({ query: queryDoc2 });
+
+    // The subset query should get its result projected from the superset
+    const [result1, result2] = await Promise.all([q1, q2]);
+    expect(result1.data).toEqual(data);
+    expect(result2.data).toEqual({ author: { name: data.author.name } });
+  });
+
+  it("does not deduplicate subset queries when deduplication is disabled", async () => {
+    const queryDoc = gql`
+      query {
+        author {
+          name
+          language
+        }
+      }
+    `;
+    const queryDoc2 = gql`
+      query {
+        author {
+          name
+        }
+      }
+    `;
+    const data = {
+      author: {
+        name: "Jonas",
+        language: "en",
+      },
+    };
+    const data2 = {
+      author: {
+        name: "Dhaivat",
+      },
+    };
+
+    const link = new MockLink([
+      {
+        request: { query: queryDoc },
+        result: { data },
+        delay: 10,
+      },
+      {
+        request: { query: queryDoc2 },
+        result: { data: data2 },
+      },
+    ]);
+    const client = new ApolloClient({
+      link,
+      cache: new InMemoryCache({ addTypename: false }),
+      queryDeduplication: false,
+    });
+
+    const q1 = client.query({ query: queryDoc });
+    const q2 = client.query({ query: queryDoc2 });
+
+    const [result1, result2] = await Promise.all([q1, q2]);
+    expect(result1.data).toEqual(data);
+    expect(result2.data).toEqual(data2);
+  });
+
+  it("deduplicates deeply nested subset queries", async () => {
+    const queryDoc = gql`
+      query {
+        author {
+          name
+          address {
+            city
+            country
+          }
+        }
+      }
+    `;
+    const queryDoc2 = gql`
+      query {
+        author {
+          name
+          address {
+            city
+          }
+        }
+      }
+    `;
+    const data = {
+      author: {
+        name: "Jonas",
+        address: {
+          city: "Berlin",
+          country: "Germany",
+        },
+      },
+    };
+
+    const link = new MockLink([
+      {
+        request: { query: queryDoc },
+        result: { data },
+        delay: 10,
+      },
+    ]);
+    const client = new ApolloClient({
+      link,
+      cache: new InMemoryCache({ addTypename: false }),
+    });
+
+    const q1 = client.query({ query: queryDoc });
+    const q2 = client.query({ query: queryDoc2 });
+
+    const [result1, result2] = await Promise.all([q1, q2]);
+    expect(result1.data).toEqual(data);
+    expect(result2.data).toEqual({
+      author: {
+        name: "Jonas",
+        address: { city: "Berlin" },
+      },
+    });
+  });
+
   describe("deprecated options", () => {
     const query = gql`
       query people {
