@@ -8,9 +8,12 @@ import {
   FragmentDefinitionNode,
 } from 'graphql';
 
-import { getOperationDefinition } from './getFromAST.js';
-import { createFragmentMap, FragmentMap } from './fragments.js';
-import { resultKeyNameFromField } from './storeUtils.js';
+import {
+  getOperationDefinition,
+  createFragmentMap,
+  resultKeyNameFromField,
+} from "@apollo/client/utilities/internal";
+import type { FragmentMap } from "@apollo/client/utilities/internal";
 import { equal } from '@wry/equality';
 
 /**
