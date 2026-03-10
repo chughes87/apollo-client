@@ -175,8 +175,9 @@ function collectFields(
     case 'FragmentSpread': {
       const fragment = fragments[(selection as FragmentSpreadNode).name.value];
       if (fragment) {
+        const tc = fragment.typeCondition?.name.value;
         for (const inner of fragment.selectionSet.selections) {
-          collectFields(inner, fragments, result, prefixTypeConditions);
+          collectFields(inner, fragments, result, prefixTypeConditions, tc);
         }
       }
       break;

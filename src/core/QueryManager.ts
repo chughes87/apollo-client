@@ -990,12 +990,10 @@ export class QueryManager {
 
             if (supersetEntry && supersetQuery) {
               // Project the superset result down to this query's fields.
-              // Don't register this in the Trie — use a detached entry
-              // to avoid a memory leak (the superset's finalize wouldn't
-              // clean up the subset's Trie entry).
-              entry = {};
               const superQ = supersetQuery;
-              entry.observable = supersetEntry.observable!.pipe(
+              entry.observable = (
+                supersetEntry.observable as Observable<ApolloLink.Result>
+              ).pipe(
                 withRestart,
                 map((result) => {
                   if (result.data) {
@@ -1006,11 +1004,16 @@ export class QueryManager {
                         superQ,
                         serverQuery
                       ),
-                    } as ApolloLink.Result<TData>;
+                    };
                   }
-                  return result as ApolloLink.Result<TData>;
-                })
-              );
+                  return result;
+                }),
+                // Share the projected observable so identical subset
+                // queries reuse the same subscription via the Trie.
+                operationType === OperationTypeNode.SUBSCRIPTION ?
+                  share()
+                : shareReplay({ refCount: true })
+              ) as Observable<ApolloLink.Result<TData>>;
             } else {
               // No in-flight match — create a new request
               inFlightIndex.set(printedServerQuery, serverQuery);
@@ -1046,6 +1049,12 @@ export class QueryManager {
           ) as Observable<ApolloLink.Result<TData>>;
         }
       } catch (error) {
+        // Clean up inFlightQueryDocIndex if we set it before the error
+        const inFlightIndex = this.inFlightQueryDocIndex;
+        if (serverQuery) {
+          const printedServerQuery = print(serverQuery);
+          inFlightIndex.delete(printedServerQuery);
+        }
         entry.observable = throwError(() => error);
       }
     } else {

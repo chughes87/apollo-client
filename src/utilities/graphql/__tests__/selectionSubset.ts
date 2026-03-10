@@ -363,6 +363,78 @@ describe('isQuerySubset', () => {
     expect(isQuerySubset(superset, subset)).toBe(true);
   });
 
+  it('handles named fragment spread with inline fragment for same type condition', () => {
+    const superset = gql`
+      query {
+        node {
+          ...AuthorFields
+        }
+      }
+      fragment AuthorFields on Author {
+        name
+        email
+      }
+    `;
+    const subset = gql`
+      query {
+        node {
+          ... on Author {
+            name
+          }
+        }
+      }
+    `;
+    expect(isQuerySubset(superset, subset)).toBe(true);
+  });
+
+  it('handles inline fragment in superset with named fragment in subset', () => {
+    const superset = gql`
+      query {
+        node {
+          ... on Author {
+            name
+            email
+          }
+        }
+      }
+    `;
+    const subset = gql`
+      query {
+        node {
+          ...AuthorName
+        }
+      }
+      fragment AuthorName on Author {
+        name
+      }
+    `;
+    expect(isQuerySubset(superset, subset)).toBe(true);
+  });
+
+  it('returns false for named fragment with different type condition than inline fragment', () => {
+    const superset = gql`
+      query {
+        node {
+          ...AuthorFields
+        }
+      }
+      fragment AuthorFields on Author {
+        name
+        email
+      }
+    `;
+    const subset = gql`
+      query {
+        node {
+          ... on Editor {
+            name
+          }
+        }
+      }
+    `;
+    expect(isQuerySubset(superset, subset)).toBe(false);
+  });
+
   it('returns false when @include directive is only on subset field', () => {
     const superset = gql`
       query {

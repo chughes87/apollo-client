@@ -1962,6 +1962,96 @@ describe("client", () => {
     });
   });
 
+  it("propagates errors from superset query to subset queries", async () => {
+    const queryDoc = gql`
+      query {
+        author {
+          name
+          email
+        }
+      }
+    `;
+    const queryDoc2 = gql`
+      query {
+        author {
+          name
+        }
+      }
+    `;
+
+    const link = new MockLink([
+      {
+        request: { query: queryDoc },
+        error: new Error("Network error"),
+        delay: 10,
+      },
+    ]);
+    const client = new ApolloClient({
+      link,
+      cache: new InMemoryCache({ addTypename: false }),
+    });
+
+    const q1 = client.query({ query: queryDoc });
+    const q2 = client.query({ query: queryDoc2 });
+
+    await expect(q1).rejects.toThrow("Network error");
+    await expect(q2).rejects.toThrow("Network error");
+  });
+
+  it("does not deduplicate when subset query fires before superset", async () => {
+    const subsetQuery = gql`
+      query {
+        author {
+          name
+        }
+      }
+    `;
+    const supersetQuery = gql`
+      query {
+        author {
+          name
+          email
+        }
+      }
+    `;
+    const data1 = {
+      author: {
+        name: "Jonas",
+      },
+    };
+    const data2 = {
+      author: {
+        name: "Jonas",
+        email: "jonas@example.com",
+      },
+    };
+
+    const link = new MockLink([
+      {
+        request: { query: subsetQuery },
+        result: { data: data1 },
+        delay: 10,
+      },
+      {
+        request: { query: supersetQuery },
+        result: { data: data2 },
+        delay: 10,
+      },
+    ]);
+    const client = new ApolloClient({
+      link,
+      cache: new InMemoryCache({ addTypename: false }),
+    });
+
+    // Subset fires first — superset should NOT piggyback on it
+    const q1 = client.query({ query: subsetQuery });
+    const q2 = client.query({ query: supersetQuery });
+
+    const [result1, result2] = await Promise.all([q1, q2]);
+    expect(result1.data).toEqual(data1);
+    expect(result2.data).toEqual(data2);
+  });
+
   describe("deprecated options", () => {
     const query = gql`
       query people {
