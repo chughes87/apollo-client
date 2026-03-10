@@ -162,9 +162,6 @@ type KeyArgs = FieldPolicy<any>["keyArgs"];
 export { Observable }
 
 // @public
-export function projectResult(data: Record<string, any>, supersetDoc: DocumentNode, subsetDoc: DocumentNode): Record<string, any>;
-
-// @public
 export function offsetLimitPagination<T = Reference_2>(keyArgs?: KeyArgs): FieldPolicy<T[]>;
 
 // @public
@@ -172,6 +169,9 @@ const print_2: ((ast: ASTNode) => string) & {
     reset(): void;
 };
 export { print_2 as print }
+
+// @public
+export function projectResult(data: Record<string, any>, supersetDoc: DocumentNode, subsetDoc: DocumentNode): Record<string, any>;
 
 // @public
 export interface Reference {
