@@ -148,9 +148,6 @@ export function isNetworkRequestSettled(networkStatus?: NetworkStatus): boolean;
 export function isQueryOperation(document: DocumentNode_2): boolean;
 
 // @public
-export function isQuerySubset(superset: DocumentNode, subset: DocumentNode): boolean;
-
-// @public
 export function isReference(obj: any): obj is Reference;
 
 // @public
@@ -169,9 +166,6 @@ const print_2: ((ast: ASTNode) => string) & {
     reset(): void;
 };
 export { print_2 as print }
-
-// @public
-export function projectResult(data: Record<string, any>, supersetDoc: DocumentNode, subsetDoc: DocumentNode): Record<string, any>;
 
 // @public
 export interface Reference {

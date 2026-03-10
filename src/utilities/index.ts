@@ -29,11 +29,6 @@ export {
 } from "@apollo/client/utilities/internal";
 
 export {
-  isQuerySubset,
-  projectResult,
-} from './graphql/selectionSubset.js';
-
-export {
   concatPagination,
   offsetLimitPagination,
   relayStylePagination,

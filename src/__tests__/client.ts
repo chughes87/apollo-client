@@ -1910,6 +1910,58 @@ describe("client", () => {
     });
   });
 
+  it("deduplicates subset queries with addTypename: true (default)", async () => {
+    const queryDoc = gql`
+      query {
+        author {
+          name
+          email
+        }
+      }
+    `;
+    const queryDoc2 = gql`
+      query {
+        author {
+          name
+        }
+      }
+    `;
+    const data = {
+      author: {
+        __typename: "Author",
+        name: "Jonas",
+        email: "jonas@example.com",
+      },
+    };
+
+    const link = new MockLink([
+      {
+        request: { query: queryDoc },
+        result: { data },
+        delay: 10,
+      },
+    ]);
+    // Use default addTypename: true
+    const client = new ApolloClient({
+      link,
+      cache: new InMemoryCache(),
+    });
+
+    const q1 = client.query({ query: queryDoc });
+    const q2 = client.query({ query: queryDoc2 });
+
+    const [result1, result2] = await Promise.all([q1, q2]);
+    expect(result1.data).toEqual(data);
+    // __typename should be included in the projected result because
+    // addTypenameToDocument adds it to both queries before comparison
+    expect(result2.data).toEqual({
+      author: {
+        __typename: "Author",
+        name: "Jonas",
+      },
+    });
+  });
+
   describe("deprecated options", () => {
     const query = gql`
       query people {

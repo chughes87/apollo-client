@@ -139,7 +139,7 @@ describe('isQuerySubset', () => {
     expect(isQuerySubset(superset, subset)).toBe(false);
   });
 
-  it('handles inline fragments', () => {
+  it('handles inline fragments with same type condition', () => {
     const superset = gql`
       query {
         node {
@@ -160,6 +160,29 @@ describe('isQuerySubset', () => {
       }
     `;
     expect(isQuerySubset(superset, subset)).toBe(true);
+  });
+
+  it('returns false for inline fragments with different type conditions', () => {
+    const superset = gql`
+      query {
+        node {
+          ... on Author {
+            name
+            email
+          }
+        }
+      }
+    `;
+    const subset = gql`
+      query {
+        node {
+          ... on Editor {
+            name
+          }
+        }
+      }
+    `;
+    expect(isQuerySubset(superset, subset)).toBe(false);
   });
 
   it('handles named fragment spreads', () => {
@@ -300,6 +323,63 @@ describe('isQuerySubset', () => {
       }
     `;
     expect(isQuerySubset(superset, subset)).toBe(true);
+  });
+
+  it('returns false when directives differ on fields', () => {
+    const superset = gql`
+      query ($skip: Boolean!) {
+        author {
+          name @skip(if: $skip)
+          email
+        }
+      }
+    `;
+    const subset = gql`
+      query {
+        author {
+          name
+        }
+      }
+    `;
+    expect(isQuerySubset(superset, subset)).toBe(false);
+  });
+
+  it('returns true when directives match on fields', () => {
+    const superset = gql`
+      query ($skip: Boolean!) {
+        author {
+          name @skip(if: $skip)
+          email
+        }
+      }
+    `;
+    const subset = gql`
+      query ($skip: Boolean!) {
+        author {
+          name @skip(if: $skip)
+        }
+      }
+    `;
+    expect(isQuerySubset(superset, subset)).toBe(true);
+  });
+
+  it('returns false when @include directive is only on subset field', () => {
+    const superset = gql`
+      query {
+        author {
+          name
+          email
+        }
+      }
+    `;
+    const subset = gql`
+      query ($include: Boolean!) {
+        author {
+          name @include(if: $include)
+        }
+      }
+    `;
+    expect(isQuerySubset(superset, subset)).toBe(false);
   });
 });
 

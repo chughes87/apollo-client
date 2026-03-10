@@ -66,11 +66,9 @@ import {
   removeDirectivesFromDocument,
   streamInfoSymbol,
   toQueryResult,
-} from "@apollo/client/utilities/internal";
-import {
   isQuerySubset,
   projectResult,
-} from "@apollo/client/utilities";
+} from "@apollo/client/utilities/internal";
 import {
   invariant,
   newInvariantError,
@@ -969,6 +967,8 @@ export class QueryManager {
             let supersetQuery: DocumentNode | undefined;
             let supersetEntry: typeof entry | undefined;
 
+            // Linear scan over in-flight queries. This is O(n) per new
+            // query but n is typically very small (few concurrent queries).
             for (const [
               printedQuery,
               queryDoc,
@@ -989,9 +989,14 @@ export class QueryManager {
             }
 
             if (supersetEntry && supersetQuery) {
-              // Project the superset result down to this query's fields
+              // Project the superset result down to this query's fields.
+              // Don't register this in the Trie — use a detached entry
+              // to avoid a memory leak (the superset's finalize wouldn't
+              // clean up the subset's Trie entry).
+              entry = {};
               const superQ = supersetQuery;
               entry.observable = supersetEntry.observable!.pipe(
+                withRestart,
                 map((result) => {
                   if (result.data) {
                     return {

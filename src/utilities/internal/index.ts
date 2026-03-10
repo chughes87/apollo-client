@@ -82,5 +82,10 @@ export {
 
 export { AutoCleanedStrongCache, AutoCleanedWeakCache } from "./caches.js";
 
+export {
+  isQuerySubset,
+  projectResult,
+} from "../graphql/selectionSubset.js";
+
 export type { ApplyHKT } from "./types/ApplyHKT.js";
 export type { ApplyHKTImplementationWithDefault } from "./types/ApplyHKTImplementationWithDefault.js";

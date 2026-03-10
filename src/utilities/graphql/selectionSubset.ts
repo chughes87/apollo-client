@@ -66,12 +66,15 @@ function isSelectionSubset(
   superFragments: FragmentMap,
   subFragments: FragmentMap,
 ): boolean {
-  // Flatten both selection sets so fragments are resolved to their fields
+  // Flatten both selection sets so fragments are resolved to their fields.
+  // Uses type-condition-prefixed keys so that fields under different inline
+  // fragment type conditions (e.g. `... on Author` vs `... on Editor`)
+  // are not conflated.
   const superFields = flattenSelections(
-    superSelectionSet, superFragments
+    superSelectionSet, superFragments, true
   );
   const subFields = flattenSelections(
-    subSelectionSet, subFragments
+    subSelectionSet, subFragments, true
   );
 
   // Every field in the subset must have a matching field in the superset
@@ -109,15 +112,20 @@ function isSelectionSubset(
  * into a map of response key -> FieldNode. When multiple fields share the
  * same response key (e.g. from different fragments), their sub-selections
  * are merged.
+ *
+ * When `prefixTypeConditions` is true, fields inside typed inline fragments
+ * are keyed as `TypeName:fieldKey` to prevent fields under different type
+ * conditions from being conflated during subset comparison.
  */
 function flattenSelections(
   selectionSet: SelectionSetNode,
   fragments: FragmentMap,
+  prefixTypeConditions: boolean = false,
 ): Map<string, FieldNode> {
   const result = new Map<string, FieldNode>();
 
   for (const selection of selectionSet.selections) {
-    collectFields(selection, fragments, result);
+    collectFields(selection, fragments, result, prefixTypeConditions);
   }
 
   return result;
@@ -127,10 +135,16 @@ function collectFields(
   selection: SelectionNode,
   fragments: FragmentMap,
   result: Map<string, FieldNode>,
+  prefixTypeConditions: boolean,
+  typeCondition?: string,
 ): void {
   switch (selection.kind) {
     case 'Field': {
-      const key = resultKeyNameFromField(selection);
+      const baseKey = resultKeyNameFromField(selection);
+      const key =
+        prefixTypeConditions && typeCondition ?
+          `${typeCondition}:${baseKey}`
+        : baseKey;
       const existing = result.get(key);
       if (existing && existing.selectionSet && selection.selectionSet) {
         // Merge sub-selections (same field referenced multiple times,
@@ -151,13 +165,10 @@ function collectFields(
       break;
     }
     case 'InlineFragment': {
-      // Recurse into the inline fragment's selection set.
-      // We do not check type conditions here — at the in-flight dedup
-      // level we are comparing structural field overlap, not type-level
-      // semantics. The server response will have the same shape
-      // regardless.
-      for (const inner of (selection as InlineFragmentNode).selectionSet.selections) {
-        collectFields(inner, fragments, result);
+      const inlineFragment = selection as InlineFragmentNode;
+      const tc = inlineFragment.typeCondition?.name.value;
+      for (const inner of inlineFragment.selectionSet.selections) {
+        collectFields(inner, fragments, result, prefixTypeConditions, tc);
       }
       break;
     }
@@ -165,7 +176,7 @@ function collectFields(
       const fragment = fragments[(selection as FragmentSpreadNode).name.value];
       if (fragment) {
         for (const inner of fragment.selectionSet.selections) {
-          collectFields(inner, fragments, result);
+          collectFields(inner, fragments, result, prefixTypeConditions);
         }
       }
       break;
@@ -249,6 +260,8 @@ function projectSelections(
     );
   }
 
+  // projectResult uses un-prefixed keys since response data keys
+  // don't include type condition prefixes.
   const superFields = flattenSelections(superSelectionSet, superFragments);
   const subFields = flattenSelections(subSelectionSet, subFragments);
 
