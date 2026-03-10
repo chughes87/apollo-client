@@ -609,4 +609,91 @@ describe('projectResult', () => {
       book: { title: 'GraphQL' },
     });
   });
+
+  it('handles polymorphic types with inline fragments and __typename', () => {
+    const superset = gql`
+      query {
+        node {
+          ... on Author {
+            __typename
+            name
+            email
+          }
+          ... on Editor {
+            __typename
+            name
+            department
+          }
+        }
+      }
+    `;
+    const subset = gql`
+      query {
+        node {
+          ... on Author {
+            __typename
+            name
+          }
+        }
+      }
+    `;
+    const data = {
+      node: {
+        __typename: 'Author',
+        name: 'Jonas',
+        email: 'jonas@example.com',
+      },
+    };
+    expect(projectResult(data, superset, subset)).toEqual({
+      node: {
+        __typename: 'Author',
+        name: 'Jonas',
+      },
+    });
+  });
+
+  it('handles polymorphic types with named fragments', () => {
+    const superset = gql`
+      query {
+        node {
+          ...AuthorFields
+          ...EditorFields
+        }
+      }
+      fragment AuthorFields on Author {
+        __typename
+        name
+        email
+      }
+      fragment EditorFields on Editor {
+        __typename
+        name
+        department
+      }
+    `;
+    const subset = gql`
+      query {
+        node {
+          ...AuthorName
+        }
+      }
+      fragment AuthorName on Author {
+        __typename
+        name
+      }
+    `;
+    const data = {
+      node: {
+        __typename: 'Author',
+        name: 'Jonas',
+        email: 'jonas@example.com',
+      },
+    };
+    expect(projectResult(data, superset, subset)).toEqual({
+      node: {
+        __typename: 'Author',
+        name: 'Jonas',
+      },
+    });
+  });
 });

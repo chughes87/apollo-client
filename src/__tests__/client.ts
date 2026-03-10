@@ -2052,6 +2052,199 @@ describe("client", () => {
     expect(result2.data).toEqual(data2);
   });
 
+  it("deduplicates subset queries with variables", async () => {
+    const queryDoc = gql`
+      query GetAuthor($id: ID!) {
+        author(id: $id) {
+          name
+          email
+        }
+      }
+    `;
+    const queryDoc2 = gql`
+      query GetAuthor($id: ID!) {
+        author(id: $id) {
+          name
+        }
+      }
+    `;
+    const data = {
+      author: {
+        name: "Jonas",
+        email: "jonas@example.com",
+      },
+    };
+
+    const link = new MockLink([
+      {
+        request: { query: queryDoc, variables: { id: "1" } },
+        result: { data },
+        delay: 10,
+      },
+    ]);
+    const client = new ApolloClient({
+      link,
+      cache: new InMemoryCache({ addTypename: false }),
+    });
+
+    const q1 = client.query({ query: queryDoc, variables: { id: "1" } });
+    const q2 = client.query({ query: queryDoc2, variables: { id: "1" } });
+
+    const [result1, result2] = await Promise.all([q1, q2]);
+    expect(result1.data).toEqual(data);
+    expect(result2.data).toEqual({ author: { name: "Jonas" } });
+  });
+
+  it("does not deduplicate subset queries with different variables", async () => {
+    const queryDoc = gql`
+      query GetAuthor($id: ID!) {
+        author(id: $id) {
+          name
+          email
+        }
+      }
+    `;
+    const queryDoc2 = gql`
+      query GetAuthor($id: ID!) {
+        author(id: $id) {
+          name
+        }
+      }
+    `;
+    const data1 = {
+      author: {
+        name: "Jonas",
+        email: "jonas@example.com",
+      },
+    };
+    const data2 = {
+      author: {
+        name: "Dhaivat",
+      },
+    };
+
+    const link = new MockLink([
+      {
+        request: { query: queryDoc, variables: { id: "1" } },
+        result: { data: data1 },
+        delay: 10,
+      },
+      {
+        request: { query: queryDoc2, variables: { id: "2" } },
+        result: { data: data2 },
+      },
+    ]);
+    const client = new ApolloClient({
+      link,
+      cache: new InMemoryCache({ addTypename: false }),
+    });
+
+    const q1 = client.query({ query: queryDoc, variables: { id: "1" } });
+    const q2 = client.query({ query: queryDoc2, variables: { id: "2" } });
+
+    const [result1, result2] = await Promise.all([q1, q2]);
+    expect(result1.data).toEqual(data1);
+    expect(result2.data).toEqual(data2);
+  });
+
+  it("deduplicates multiple subset queries on the same superset", async () => {
+    const supersetQuery = gql`
+      query {
+        author {
+          name
+          email
+          age
+        }
+      }
+    `;
+    const subsetQuery1 = gql`
+      query {
+        author {
+          name
+        }
+      }
+    `;
+    const subsetQuery2 = gql`
+      query {
+        author {
+          email
+        }
+      }
+    `;
+    const data = {
+      author: {
+        name: "Jonas",
+        email: "jonas@example.com",
+        age: 30,
+      },
+    };
+
+    const link = new MockLink([
+      {
+        request: { query: supersetQuery },
+        result: { data },
+        delay: 10,
+      },
+    ]);
+    const client = new ApolloClient({
+      link,
+      cache: new InMemoryCache({ addTypename: false }),
+    });
+
+    const q1 = client.query({ query: supersetQuery });
+    const q2 = client.query({ query: subsetQuery1 });
+    const q3 = client.query({ query: subsetQuery2 });
+
+    const [result1, result2, result3] = await Promise.all([q1, q2, q3]);
+    expect(result1.data).toEqual(data);
+    expect(result2.data).toEqual({ author: { name: "Jonas" } });
+    expect(result3.data).toEqual({ author: { email: "jonas@example.com" } });
+  });
+
+  it("deduplicates subset query when superset completes synchronously", async () => {
+    const queryDoc = gql`
+      query {
+        author {
+          name
+          email
+        }
+      }
+    `;
+    const queryDoc2 = gql`
+      query {
+        author {
+          name
+        }
+      }
+    `;
+    const data = {
+      author: {
+        name: "Jonas",
+        email: "jonas@example.com",
+      },
+    };
+
+    // delay: 0 to test synchronous completion / shareReplay path
+    const link = new MockLink([
+      {
+        request: { query: queryDoc },
+        result: { data },
+        delay: 0,
+      },
+    ]);
+    const client = new ApolloClient({
+      link,
+      cache: new InMemoryCache({ addTypename: false }),
+    });
+
+    const q1 = client.query({ query: queryDoc });
+    const q2 = client.query({ query: queryDoc2 });
+
+    const [result1, result2] = await Promise.all([q1, q2]);
+    expect(result1.data).toEqual(data);
+    expect(result2.data).toEqual({ author: { name: "Jonas" } });
+  });
+
   describe("deprecated options", () => {
     const query = gql`
       query people {

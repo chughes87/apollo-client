@@ -969,11 +969,11 @@ export class QueryManager {
 
             // Linear scan over in-flight queries. This is O(n) per new
             // query but n is typically very small (few concurrent queries).
-            for (const [
-              printedQuery,
-              queryDoc,
-            ] of inFlightIndex.entries()) {
-              if (printedQuery === printedServerQuery) continue;
+            // Note: uses forEach instead of for...of because the test
+            // tsconfig targets ES5 without downlevelIteration.
+            inFlightIndex.forEach((queryDoc, printedQuery) => {
+              if (supersetEntry) return;
+              if (printedQuery === printedServerQuery) return;
               const candidate = inFlightLinkObservables.peek(
                 printedQuery,
                 varJson
@@ -984,9 +984,8 @@ export class QueryManager {
               ) {
                 supersetQuery = queryDoc;
                 supersetEntry = candidate;
-                break;
               }
-            }
+            });
 
             if (supersetEntry && supersetQuery) {
               // Project the superset result down to this query's fields.
@@ -1007,6 +1006,19 @@ export class QueryManager {
                     };
                   }
                   return result;
+                }),
+                finalize(() => {
+                  if (
+                    inFlightLinkObservables.peek(
+                      printedServerQuery,
+                      varJson
+                    ) === entry
+                  ) {
+                    inFlightLinkObservables.remove(
+                      printedServerQuery,
+                      varJson
+                    );
+                  }
                 }),
                 // Share the projected observable so identical subset
                 // queries reuse the same subscription via the Trie.

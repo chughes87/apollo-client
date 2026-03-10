@@ -3,8 +3,6 @@ import {
   SelectionSetNode,
   SelectionNode,
   FieldNode,
-  InlineFragmentNode,
-  FragmentSpreadNode,
   FragmentDefinitionNode,
 } from 'graphql';
 
@@ -77,22 +75,38 @@ function isSelectionSubset(
     subSelectionSet, subFragments, true
   );
 
-  // Every field in the subset must have a matching field in the superset
+  // Every field in the subset must have a matching field in the superset.
+  // Note: we use forEach instead of for...of to avoid requiring
+  // downlevelIteration when targeting ES5 (for...of on Map is not
+  // supported without it).
   let isSubset = true;
   subFields.forEach((subField, key) => {
     if (!isSubset) return;
+
     const superField = superFields.get(key);
-    if (!superField) { isSubset = false; return; }
+    if (!superField) {
+      isSubset = false;
+      return;
+    }
 
     // Arguments must match exactly
-    if (!argumentsEqual(superField, subField)) { isSubset = false; return; }
+    if (!argumentsEqual(superField, subField)) {
+      isSubset = false;
+      return;
+    }
 
     // Directives must match exactly
-    if (!directivesEqual(superField, subField)) { isSubset = false; return; }
+    if (!directivesEqual(superField, subField)) {
+      isSubset = false;
+      return;
+    }
 
     // Recursively check nested selection sets
     if (subField.selectionSet) {
-      if (!superField.selectionSet) { isSubset = false; return; }
+      if (!superField.selectionSet) {
+        isSubset = false;
+        return;
+      }
       if (!isSelectionSubset(
         superField.selectionSet,
         subField.selectionSet,
@@ -100,6 +114,7 @@ function isSelectionSubset(
         subFragments,
       )) {
         isSubset = false;
+        return;
       }
     }
   });
@@ -165,15 +180,14 @@ function collectFields(
       break;
     }
     case 'InlineFragment': {
-      const inlineFragment = selection as InlineFragmentNode;
-      const tc = inlineFragment.typeCondition?.name.value;
-      for (const inner of inlineFragment.selectionSet.selections) {
+      const tc = selection.typeCondition?.name.value;
+      for (const inner of selection.selectionSet.selections) {
         collectFields(inner, fragments, result, prefixTypeConditions, tc);
       }
       break;
     }
     case 'FragmentSpread': {
-      const fragment = fragments[(selection as FragmentSpreadNode).name.value];
+      const fragment = fragments[selection.name.value];
       if (fragment) {
         const tc = fragment.typeCondition?.name.value;
         for (const inner of fragment.selectionSet.selections) {
@@ -189,7 +203,7 @@ function argumentsEqual(a: FieldNode, b: FieldNode): boolean {
   const aArgs = a.arguments || [];
   const bArgs = b.arguments || [];
   if (aArgs.length !== bArgs.length) return false;
-  if (aArgs.length === 0) return true;
+  if (aArgs.length <= 1) return equal(aArgs, bArgs);
   // Use deep equality on the sorted argument arrays
   return equal(
     [...aArgs].sort((x, y) => x.name.value.localeCompare(y.name.value)),
@@ -201,7 +215,7 @@ function directivesEqual(a: FieldNode, b: FieldNode): boolean {
   const aDir = a.directives || [];
   const bDir = b.directives || [];
   if (aDir.length !== bDir.length) return false;
-  if (aDir.length === 0) return true;
+  if (aDir.length <= 1) return equal(aDir, bDir);
   return equal(
     [...aDir].sort((x, y) => x.name.value.localeCompare(y.name.value)),
     [...bDir].sort((x, y) => x.name.value.localeCompare(y.name.value)),
