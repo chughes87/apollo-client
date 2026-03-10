@@ -8,9 +8,9 @@ import {
   FragmentDefinitionNode,
 } from 'graphql';
 
-import { getOperationDefinition } from './getFromAST';
-import { createFragmentMap, FragmentMap } from './fragments';
-import { resultKeyNameFromField } from './storeUtils';
+import { getOperationDefinition } from './getFromAST.js';
+import { createFragmentMap, FragmentMap } from './fragments.js';
+import { resultKeyNameFromField } from './storeUtils.js';
 import { equal } from '@wry/equality';
 
 /**
