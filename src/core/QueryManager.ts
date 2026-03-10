@@ -260,6 +260,8 @@ export class QueryManager {
     this.cancelPendingFetches(
       newInvariantError("QueryManager stopped while query was in flight")
     );
+
+    this.inFlightQueryDocIndex.clear();
   }
 
   private cancelPendingFetches(error: Error) {
@@ -917,6 +919,7 @@ export class QueryManager {
 
     if (serverQuery) {
       const { inFlightLinkObservables, link } = this;
+      const printedServerQuery = print(serverQuery);
 
       try {
         const operation = this.incrementalHandler.prepareRequest({
@@ -956,7 +959,6 @@ export class QueryManager {
         }
 
         if (deduplication) {
-          const printedServerQuery = print(serverQuery);
           const varJson = canonicalStringify(variables);
 
           entry = inFlightLinkObservables.lookup(printedServerQuery, varJson);
@@ -1062,11 +1064,7 @@ export class QueryManager {
         }
       } catch (error) {
         // Clean up inFlightQueryDocIndex if we set it before the error
-        const inFlightIndex = this.inFlightQueryDocIndex;
-        if (serverQuery) {
-          const printedServerQuery = print(serverQuery);
-          inFlightIndex.delete(printedServerQuery);
-        }
+        this.inFlightQueryDocIndex.delete(printedServerQuery);
         entry.observable = throwError(() => error);
       }
     } else {
