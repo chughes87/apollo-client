@@ -7,7 +7,7 @@
 import type { ASTNode } from 'graphql';
 import { canonicalStringify } from '@apollo/client/utilities/internal';
 import { DeepOmit } from '@apollo/client/utilities/internal';
-import type { DocumentNode } from 'graphql';
+import { DocumentNode } from 'graphql';
 import type { DocumentNode as DocumentNode_2 } from '@apollo/client';
 import type { FieldNode } from 'graphql';
 import type { FieldPolicy } from '@apollo/client/cache';
@@ -148,6 +148,9 @@ export function isNetworkRequestSettled(networkStatus?: NetworkStatus): boolean;
 export function isQueryOperation(document: DocumentNode_2): boolean;
 
 // @public
+export function isQuerySubset(superset: DocumentNode, subset: DocumentNode): boolean;
+
+// @public
 export function isReference(obj: any): obj is Reference;
 
 // @public
@@ -157,6 +160,9 @@ export function isSubscriptionOperation(document: DocumentNode_2): boolean;
 type KeyArgs = FieldPolicy<any>["keyArgs"];
 
 export { Observable }
+
+// @public
+export function projectResult(data: Record<string, any>, supersetDoc: DocumentNode, subsetDoc: DocumentNode): Record<string, any>;
 
 // @public
 export function offsetLimitPagination<T = Reference_2>(keyArgs?: KeyArgs): FieldPolicy<T[]>;
