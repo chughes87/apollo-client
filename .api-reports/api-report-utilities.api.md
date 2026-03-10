@@ -7,7 +7,7 @@
 import type { ASTNode } from 'graphql';
 import { canonicalStringify } from '@apollo/client/utilities/internal';
 import { DeepOmit } from '@apollo/client/utilities/internal';
-import type { DocumentNode } from 'graphql';
+import { DocumentNode } from 'graphql';
 import type { DocumentNode as DocumentNode_2 } from '@apollo/client';
 import type { FieldNode } from 'graphql';
 import type { FieldPolicy } from '@apollo/client/cache';

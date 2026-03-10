@@ -66,6 +66,9 @@ import {
   removeDirectivesFromDocument,
   streamInfoSymbol,
   toQueryResult,
+  isQuerySubset,
+  projectErrors,
+  projectResult,
 } from "@apollo/client/utilities/internal";
 import {
   invariant,
@@ -258,6 +261,8 @@ export class QueryManager {
     this.cancelPendingFetches(
       newInvariantError("QueryManager stopped while query was in flight")
     );
+
+    this.inFlightQueryDocIndex.clear();
   }
 
   private cancelPendingFetches(error: Error) {
@@ -880,6 +885,9 @@ export class QueryManager {
     restart?: () => void;
   }>(false);
 
+  // Maps printed query strings to their DocumentNode for subset deduplication lookups
+  private inFlightQueryDocIndex = new Map<string, DocumentNode>();
+
   private getObservableFromLink<TData = unknown>(
     query: DocumentNode,
     context: DefaultContext | undefined,
@@ -912,6 +920,7 @@ export class QueryManager {
 
     if (serverQuery) {
       const { inFlightLinkObservables, link } = this;
+      const printedServerQuery = print(serverQuery);
 
       try {
         const operation = this.incrementalHandler.prepareRequest({
@@ -951,29 +960,108 @@ export class QueryManager {
         }
 
         if (deduplication) {
-          const printedServerQuery = print(serverQuery);
           const varJson = canonicalStringify(variables);
 
           entry = inFlightLinkObservables.lookup(printedServerQuery, varJson);
 
           if (!entry.observable) {
-            entry.observable = execute(link, operation, executeContext).pipe(
-              withRestart,
-              finalize(() => {
-                if (
-                  inFlightLinkObservables.peek(printedServerQuery, varJson) ===
-                  entry
-                ) {
-                  inFlightLinkObservables.remove(printedServerQuery, varJson);
-                }
-              }),
-              // We don't want to replay the last emitted value for
-              // subscriptions and instead opt to wait to receive updates until
-              // the subscription emits new values.
-              operationType === OperationTypeNode.SUBSCRIPTION ?
-                share()
-              : shareReplay({ refCount: true })
-            ) as Observable<ApolloLink.Result<TData>>;
+            // No exact match — check for a superset query already in flight
+            const inFlightIndex = this.inFlightQueryDocIndex;
+            let supersetQuery: DocumentNode | undefined;
+            let supersetEntry: typeof entry | undefined;
+
+            // Linear scan over in-flight queries. This is O(n) per new
+            // query but n is typically very small (few concurrent queries).
+            // Note: uses forEach instead of for...of because the test
+            // tsconfig targets ES5 without downlevelIteration.
+            inFlightIndex.forEach((queryDoc, printedQuery) => {
+              if (supersetEntry) return;
+              if (printedQuery === printedServerQuery) return;
+              const candidate = inFlightLinkObservables.peek(
+                printedQuery,
+                varJson
+              );
+              if (
+                candidate?.observable &&
+                isQuerySubset(queryDoc, serverQuery)
+              ) {
+                supersetQuery = queryDoc;
+                supersetEntry = candidate;
+              }
+            });
+
+            if (supersetEntry && supersetQuery) {
+              // Project the superset result down to this query's fields.
+              const superQ = supersetQuery;
+              entry.observable = (
+                supersetEntry.observable as Observable<ApolloLink.Result>
+              ).pipe(
+                withRestart,
+                map((result) => {
+                  const projected: typeof result = { ...result };
+                  if (result.data) {
+                    projected.data = projectResult(
+                      result.data as Record<string, any>,
+                      superQ,
+                      serverQuery
+                    );
+                  }
+                  if (result.errors) {
+                    projected.errors = projectErrors(
+                      result.errors,
+                      superQ,
+                      serverQuery
+                    );
+                  }
+                  return projected;
+                }),
+                finalize(() => {
+                  if (
+                    inFlightLinkObservables.peek(
+                      printedServerQuery,
+                      varJson
+                    ) === entry
+                  ) {
+                    inFlightLinkObservables.remove(
+                      printedServerQuery,
+                      varJson
+                    );
+                  }
+                }),
+                // Share the projected observable so identical subset
+                // queries reuse the same subscription via the Trie.
+                operationType === OperationTypeNode.SUBSCRIPTION ?
+                  share()
+                : shareReplay({ refCount: true })
+              ) as Observable<ApolloLink.Result<TData>>;
+            } else {
+              // No in-flight match — create a new request
+              inFlightIndex.set(printedServerQuery, serverQuery);
+
+              entry.observable = execute(link, operation, executeContext).pipe(
+                withRestart,
+                finalize(() => {
+                  if (
+                    inFlightLinkObservables.peek(
+                      printedServerQuery,
+                      varJson
+                    ) === entry
+                  ) {
+                    inFlightLinkObservables.remove(
+                      printedServerQuery,
+                      varJson
+                    );
+                  }
+                  inFlightIndex.delete(printedServerQuery);
+                }),
+                // We don't want to replay the last emitted value for
+                // subscriptions and instead opt to wait to receive updates until
+                // the subscription emits new values.
+                operationType === OperationTypeNode.SUBSCRIPTION ?
+                  share()
+                : shareReplay({ refCount: true })
+              ) as Observable<ApolloLink.Result<TData>>;
+            }
           }
         } else {
           entry.observable = execute(link, operation, executeContext).pipe(
@@ -981,6 +1069,8 @@ export class QueryManager {
           ) as Observable<ApolloLink.Result<TData>>;
         }
       } catch (error) {
+        // Clean up inFlightQueryDocIndex if we set it before the error
+        this.inFlightQueryDocIndex.delete(printedServerQuery);
         entry.observable = throwError(() => error);
       }
     } else {
