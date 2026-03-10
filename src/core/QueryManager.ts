@@ -991,7 +991,7 @@ export class QueryManager {
             if (supersetEntry && supersetQuery) {
               // Project the superset result down to this query's fields
               const superQ = supersetQuery;
-              entry.observable = supersetEntry.observable.pipe(
+              entry.observable = supersetEntry.observable!.pipe(
                 map((result) => {
                   if (result.data) {
                     return {

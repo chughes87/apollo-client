@@ -31,7 +31,7 @@ export {
 export {
   isQuerySubset,
   projectResult,
-} from './graphql/selectionSubset';
+} from './graphql/selectionSubset.js';
 
 export {
   concatPagination,
