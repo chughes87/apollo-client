@@ -1,5 +1,6 @@
-import {
+import type {
   DocumentNode,
+  GraphQLFormattedError,
   SelectionSetNode,
   SelectionNode,
   FieldNode,
@@ -254,6 +255,67 @@ export function projectResult(
     superFragments,
     subFragments,
   );
+}
+
+/**
+ * Filters a list of GraphQL errors to only include errors whose `path`
+ * falls within the fields requested by the subset query. Errors without
+ * a `path` (e.g. request-level errors) are always included since they
+ * are not field-specific.
+ */
+export function projectErrors(
+  errors: ReadonlyArray<GraphQLFormattedError>,
+  supersetDoc: DocumentNode,
+  subsetDoc: DocumentNode,
+): ReadonlyArray<GraphQLFormattedError> {
+  const superOp = getOperationDefinition(supersetDoc);
+  const subOp = getOperationDefinition(subsetDoc);
+  if (!superOp || !subOp) return errors;
+
+  const subFragments = createFragmentMap(
+    subsetDoc.definitions.filter(
+      (d): d is FragmentDefinitionNode => d.kind === 'FragmentDefinition'
+    )
+  );
+
+  return errors.filter((error) => {
+    // Errors without a path are request-level; always include them.
+    if (!error.path) return true;
+    return isPathInSelectionSet(error.path, subOp.selectionSet, subFragments);
+  });
+}
+
+/**
+ * Checks whether a GraphQL error path falls within the given selection set.
+ * Walks the path segments against the flattened selections, descending into
+ * nested selection sets for object fields and skipping numeric segments
+ * (array indices).
+ */
+function isPathInSelectionSet(
+  path: ReadonlyArray<string | number>,
+  selectionSet: SelectionSetNode,
+  fragments: FragmentMap,
+): boolean {
+  const fields = flattenSelections(selectionSet, fragments);
+  let currentFields = fields;
+
+  for (let i = 0; i < path.length; i++) {
+    const segment = path[i];
+
+    // Numeric segments are array indices — skip without advancing the selection set.
+    if (typeof segment === 'number') continue;
+
+    const field = currentFields.get(segment);
+    if (!field) return false;
+
+    // If there are more path segments and this field has sub-selections,
+    // descend into them.
+    if (field.selectionSet) {
+      currentFields = flattenSelections(field.selectionSet, fragments);
+    }
+  }
+
+  return true;
 }
 
 function projectSelections(

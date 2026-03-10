@@ -1,6 +1,6 @@
 import gql from 'graphql-tag';
 
-import { isQuerySubset, projectResult } from '../selectionSubset';
+import { isQuerySubset, projectErrors, projectResult } from '../selectionSubset';
 
 describe('isQuerySubset', () => {
   it('returns true for identical queries', () => {
@@ -695,5 +695,139 @@ describe('projectResult', () => {
         name: 'Jonas',
       },
     });
+  });
+});
+
+describe('projectErrors', () => {
+  it('keeps errors whose path matches subset fields', () => {
+    const superset = gql`
+      query {
+        author {
+          name
+          email
+        }
+      }
+    `;
+    const subset = gql`
+      query {
+        author {
+          name
+        }
+      }
+    `;
+    const errors = [
+      { message: 'name failed', path: ['author', 'name'] },
+      { message: 'email failed', path: ['author', 'email'] },
+    ];
+    expect(projectErrors(errors, superset, subset)).toEqual([
+      { message: 'name failed', path: ['author', 'name'] },
+    ]);
+  });
+
+  it('always includes errors without a path', () => {
+    const superset = gql`
+      query {
+        author {
+          name
+          email
+        }
+      }
+    `;
+    const subset = gql`
+      query {
+        author {
+          name
+        }
+      }
+    `;
+    const errors = [
+      { message: 'request-level error' },
+      { message: 'email failed', path: ['author', 'email'] },
+    ];
+    expect(projectErrors(errors, superset, subset)).toEqual([
+      { message: 'request-level error' },
+    ]);
+  });
+
+  it('handles errors with array index path segments', () => {
+    const superset = gql`
+      query {
+        authors {
+          name
+          email
+        }
+      }
+    `;
+    const subset = gql`
+      query {
+        authors {
+          name
+        }
+      }
+    `;
+    const errors = [
+      { message: 'name failed', path: ['authors', 0, 'name'] },
+      { message: 'email failed', path: ['authors', 1, 'email'] },
+    ];
+    expect(projectErrors(errors, superset, subset)).toEqual([
+      { message: 'name failed', path: ['authors', 0, 'name'] },
+    ]);
+  });
+
+  it('handles deeply nested error paths', () => {
+    const superset = gql`
+      query {
+        author {
+          address {
+            city
+            zip
+          }
+        }
+      }
+    `;
+    const subset = gql`
+      query {
+        author {
+          address {
+            city
+          }
+        }
+      }
+    `;
+    const errors = [
+      { message: 'city failed', path: ['author', 'address', 'city'] },
+      { message: 'zip failed', path: ['author', 'address', 'zip'] },
+    ];
+    expect(projectErrors(errors, superset, subset)).toEqual([
+      { message: 'city failed', path: ['author', 'address', 'city'] },
+    ]);
+  });
+
+  it('filters out errors for fields not in subset', () => {
+    const superset = gql`
+      query {
+        author {
+          name
+          email
+        }
+        book {
+          title
+        }
+      }
+    `;
+    const subset = gql`
+      query {
+        author {
+          name
+        }
+      }
+    `;
+    const errors = [
+      { message: 'name failed', path: ['author', 'name'] },
+      { message: 'title failed', path: ['book', 'title'] },
+    ];
+    expect(projectErrors(errors, superset, subset)).toEqual([
+      { message: 'name failed', path: ['author', 'name'] },
+    ]);
   });
 });

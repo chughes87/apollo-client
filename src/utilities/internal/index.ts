@@ -84,6 +84,7 @@ export { AutoCleanedStrongCache, AutoCleanedWeakCache } from "./caches.js";
 
 export {
   isQuerySubset,
+  projectErrors,
   projectResult,
 } from "../graphql/selectionSubset.js";
 

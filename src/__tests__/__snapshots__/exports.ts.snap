@@ -475,6 +475,7 @@ Array [
   "mergeOptions",
   "omitDeep",
   "preventUnhandledRejection",
+  "projectErrors",
   "projectResult",
   "registerGlobalCache",
   "removeDirectivesFromDocument",

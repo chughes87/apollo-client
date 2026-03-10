@@ -67,6 +67,7 @@ import {
   streamInfoSymbol,
   toQueryResult,
   isQuerySubset,
+  projectErrors,
   projectResult,
 } from "@apollo/client/utilities/internal";
 import {
@@ -997,17 +998,22 @@ export class QueryManager {
               ).pipe(
                 withRestart,
                 map((result) => {
+                  const projected: typeof result = { ...result };
                   if (result.data) {
-                    return {
-                      ...result,
-                      data: projectResult(
-                        result.data as Record<string, any>,
-                        superQ,
-                        serverQuery
-                      ),
-                    };
+                    projected.data = projectResult(
+                      result.data as Record<string, any>,
+                      superQ,
+                      serverQuery
+                    );
                   }
-                  return result;
+                  if (result.errors) {
+                    projected.errors = projectErrors(
+                      result.errors,
+                      superQ,
+                      serverQuery
+                    );
+                  }
+                  return projected;
                 }),
                 finalize(() => {
                   if (

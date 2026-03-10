@@ -2245,6 +2245,59 @@ describe("client", () => {
     expect(result2.data).toEqual({ author: { name: "Jonas" } });
   });
 
+  it("filters GraphQL errors to only include subset-relevant paths", async () => {
+    const queryDoc = gql`
+      query {
+        author {
+          name
+          email
+        }
+      }
+    `;
+    const queryDoc2 = gql`
+      query {
+        author {
+          name
+        }
+      }
+    `;
+    const data = {
+      author: {
+        name: "Jonas",
+        email: null,
+      },
+    };
+
+    const link = new MockLink([
+      {
+        request: { query: queryDoc },
+        result: {
+          data,
+          errors: [
+            { message: "email resolver failed", path: ["author", "email"] },
+          ] as any,
+        },
+        delay: 10,
+      },
+    ]);
+    const client = new ApolloClient({
+      link,
+      cache: new InMemoryCache({ addTypename: false }),
+      queryDeduplication: true,
+    });
+
+    const q1 = client.query({ query: queryDoc, errorPolicy: "all" });
+    const q2 = client.query({ query: queryDoc2, errorPolicy: "all" });
+
+    const [result1, result2] = await Promise.all([q1, q2]);
+    // Superset gets the error
+    expect(result1.error).toBeDefined();
+    expect(result1.error?.errors.length).toBe(1);
+    expect(result1.error?.errors[0].message).toBe("email resolver failed");
+    // Subset should NOT get the error since "email" is not in its query
+    expect(result2.error).toBeUndefined();
+  });
+
   describe("deprecated options", () => {
     const query = gql`
       query people {
